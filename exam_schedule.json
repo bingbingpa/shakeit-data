@@ -1,0 +1,44 @@
+{
+  "generated_at": "2026-09-03",
+  "jm_cd": "7916",
+  "pass_rates": [],
+  "sessions": [
+    {
+      "apply_end": "2026-03-09",
+      "apply_start": "2026-02-02",
+      "pass_date": "2026-04-10",
+      "practical_end": "2026-04-05",
+      "practical_start": "2026-03-14",
+      "round": 1,
+      "year": 2026
+    },
+    {
+      "apply_end": "2026-05-25",
+      "apply_start": "2026-04-27",
+      "pass_date": "2026-06-26",
+      "practical_end": "2026-06-14",
+      "practical_start": "2026-05-30",
+      "round": 2,
+      "year": 2026
+    },
+    {
+      "apply_end": "2026-08-24",
+      "apply_start": "2026-07-27",
+      "pass_date": "2026-10-02",
+      "practical_end": "2026-09-16",
+      "practical_start": "2026-08-29",
+      "round": 3,
+      "year": 2026
+    },
+    {
+      "apply_end": "2026-11-09",
+      "apply_start": "2026-10-12",
+      "pass_date": "2026-12-11",
+      "practical_end": "2026-12-02",
+      "practical_start": "2026-11-14",
+      "round": 4,
+      "year": 2026
+    }
+  ],
+  "source": "data.go.kr 국가자격 시험일정 / 국가기술자격 합격률"
+}
