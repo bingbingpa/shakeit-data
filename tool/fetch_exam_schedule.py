@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -44,7 +45,14 @@ OUT_PATH = os.environ.get("OUT_PATH") or os.path.join(
     "exam_schedule.json",
 )
 
-TIMEOUT = 30
+# GitHub 러너(해외)에서 data.go.kr 응답이 들쭉날쭉하다. 같은 요청이
+# 4초에 끝나기도 하고 30초를 넘기기도 한다.
+TIMEOUT = 60
+
+# 한 번 삐끗했다고 그날 갱신을 통째로 날리지 않는다. 매일 도는 작업이라
+# 재시도가 없으면 빨간 X가 수시로 뜨고, 그러다 진짜 고장에 무뎌진다.
+RETRIES = 3
+RETRY_BACKOFF = 5  # 초. 시도마다 5, 10초 쉰다.
 
 # 포털이 한 페이지 50건을 넘기면 resultCode 930으로 거절한다.
 PAGE_SIZE = 50
@@ -69,9 +77,26 @@ def service_key() -> str:
 
 
 def get(url: str) -> bytes:
+    """느리면 몇 번 더 두드려본다.
+
+    HTTP 오류(4xx·5xx)는 재시도하지 않는다. 키가 틀렸거나 파라미터가
+    잘못된 것이라 다시 보내도 같은 답이 오고, 하루 쿼터만 축낸다.
+    """
     req = urllib.request.Request(url, headers={"User-Agent": "shakeit-schedule-bot"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        return r.read()
+    for attempt in range(1, RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+                return r.read()
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            if attempt == RETRIES:
+                raise
+            wait = RETRY_BACKOFF * attempt
+            print(f"  연결 실패({type(e).__name__}) — {wait}초 후 재시도 "
+                  f"{attempt}/{RETRIES - 1}")
+            time.sleep(wait)
+    raise RuntimeError("도달할 수 없는 분기")
 
 
 def iso(yyyymmdd: str) -> str | None:
