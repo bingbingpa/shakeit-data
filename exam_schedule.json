@@ -1,7 +1,64 @@
 {
-  "generated_at": "2026-09-03",
+  "generated_at": "2026-09-04",
   "jm_cd": "7916",
-  "pass_rates": [],
+  "pass_rates": [
+    {
+      "applied": 801,
+      "passed": 493,
+      "rate": 61.5,
+      "round": 1,
+      "year": 2024
+    },
+    {
+      "applied": 848,
+      "passed": 562,
+      "rate": 66.3,
+      "round": 2,
+      "year": 2024
+    },
+    {
+      "applied": 971,
+      "passed": 620,
+      "rate": 63.9,
+      "round": 3,
+      "year": 2024
+    },
+    {
+      "applied": 1008,
+      "passed": 596,
+      "rate": 59.1,
+      "round": 4,
+      "year": 2024
+    },
+    {
+      "applied": 731,
+      "passed": 449,
+      "rate": 61.4,
+      "round": 1,
+      "year": 2025
+    },
+    {
+      "applied": 809,
+      "passed": 477,
+      "rate": 59.0,
+      "round": 2,
+      "year": 2025
+    },
+    {
+      "applied": 872,
+      "passed": 522,
+      "rate": 59.9,
+      "round": 3,
+      "year": 2025
+    },
+    {
+      "applied": 819,
+      "passed": 442,
+      "rate": 54.0,
+      "round": 4,
+      "year": 2025
+    }
+  ],
   "sessions": [
     {
       "apply_end": "2026-03-09",

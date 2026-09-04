@@ -35,6 +35,10 @@ JM_CD = "7916"
 # 국가기술자격. 일정 API의 qualgbCd.
 QUAL_GB_CD = "T"
 
+# 기능사. 합격률 API의 grdCd(필수, 2자리). 10·20·30·40 체계이고 40이
+# 기능사다 — 1~8을 넣으면 오류 없이 0건만 돌아와 승인 대기로 오해하기 쉽다.
+GRD_CD = "40"
+
 SCHEDULE_URL = "https://apis.data.go.kr/B490007/qualExamSchd/getQualExamSchdList"
 PASS_RATE_URL = (
     "http://openapi.q-net.or.kr/api/service/rest/InquiryQualPassRateSVC/getList"
@@ -57,9 +61,9 @@ RETRY_BACKOFF = 5  # 초. 시도마다 5, 10초 쉰다.
 # 포털이 한 페이지 50건을 넘기면 resultCode 930으로 거절한다.
 PAGE_SIZE = 50
 
-# 합격률은 전 종목이 섞여 오는데 총 건수를 미리 알 수 없다. 응답이
-# 계속 가득 차 오는 경우를 대비한 안전장치 — 하루 쿼터가 1,000회다.
-MAX_PAGES = 20
+# 합격률은 그 등급 전 종목이 섞여 온다(연 1,500건 안팎). 이 API는 페이지
+# 크기에 제한이 없어 한 번에 다 받는다. 종목이 늘어도 버티도록 여유를 둔다.
+PASS_RATE_PAGE_SIZE = 5000
 
 
 def service_key() -> str:
@@ -158,87 +162,108 @@ def fetch_sessions(key: str, year: int) -> list[dict]:
     return [by_round[k] for k in sorted(by_round)]
 
 
-def _text(node, *names) -> str | None:
-    """항목에서 이름 후보 중 먼저 잡히는 값을 꺼낸다."""
-    for n in names:
-        el = node.find(n)
-        if el is not None and (el.text or "").strip():
-            return el.text.strip()
-    return None
+def _text(node, tag) -> str:
+    el = node.find(tag)
+    return (el.text or "").strip() if el is not None else ""
 
 
 def fetch_pass_rates(key: str, years: list[int]) -> list[dict]:
-    """지난 회차 합격률.
+    """지난 회차 실기 합격률.
 
-    **이 API의 응답 필드는 아직 실물로 확인하지 못했다.** 활용신청이
-    승인되기 전에는 `NORMAL SERVICE`에 `totalCount=0`만 돌아온다.
-    그래서 필드명을 여러 후보로 두고 읽으며, 못 읽으면 그 해를 조용히
-    건너뛴다 — 합격률은 부가 정보라 없다고 일정까지 막으면 안 된다.
-    승인 후 첫 실행 로그에서 실제 필드명을 확인하고 정리할 것.
+    **`grdCd`는 필수이고 값은 2자리다.** 처음에 1~8을 넣어보고 전부
+    `totalCount=0`이 나와 "활용신청 승인 대기"로 오해했는데, 실제 체계는
+    10·20·30·40이었다. 40이 기능사다.
+
+    종목을 요청으로 좁힐 수 없어 그 등급의 전 종목이 섞여 온다(2024년
+    기능사 1537건). 그래서 `totalCount`를 보고 끝까지 넘긴 뒤 조주기능사
+    (jmCd 7916)만 골라낸다 — 이름으로 거르면 표기가 조금만 달라져도
+    놓친다.
+
+    실패해도 그 해를 건너뛸 뿐 일정 수집은 계속한다. 합격률은 부가
+    정보라, 없다고 일정까지 막으면 안 된다.
     """
     out: list[dict] = []
     for year in years:
-        # 이 API는 종목을 요청으로 좁힐 수 없어 전 종목이 섞여 온다.
-        # 한 페이지가 50건이니 조주기능사를 만나려면 넘겨봐야 한다.
-        items: list = []
         try:
-            page = 1
-            while page <= MAX_PAGES:
-                url = (
-                    f"{PASS_RATE_URL}?serviceKey={key}&baseYY={year}"
-                    f"&numOfRows={PAGE_SIZE}&pageNo={page}"
-                )
-                root = ET.fromstring(get(url).decode("utf-8"))
-                got = root.findall(".//item")
-                items.extend(got)
-                if len(got) < PAGE_SIZE:
-                    break
-                page += 1
-            else:
-                # 끝을 못 보고 상한에 걸렸다. 조용히 자르면 "합격률이
-                # 없는 해"처럼 보이므로 드러낸다.
-                print(f"  합격률 {year}년: {MAX_PAGES}페이지 상한에 걸림 — 뒤쪽 누락 가능")
+            items = _fetch_all_pages(key, year)
         except (urllib.error.URLError, ET.ParseError, OSError) as e:
             print(f"  합격률 {year}년 조회 실패({type(e).__name__}) — 건너뜀")
             continue
 
         if not items:
-            print(f"  합격률 {year}년: 0건 (활용신청 승인 대기로 보임)")
+            print(f"  합격률 {year}년: 0건")
             continue
 
         before = len(out)
         for it in items:
-            name = _text(it, "jmNm", "jmfldnm", "seriesnm") or ""
-            if "조주" not in name:
+            if _text(it, "jmCd") != JM_CD:
                 continue
-            # 실기만 쓴다. 필기 합격률은 조주기능사 학습과 상관이 적다.
-            gb = _text(it, "examgbNm", "examGbNm", "gbNm") or ""
-            if gb and "실기" not in gb:
+            # 실기만 쓴다. 필기 합격률은 실기 연습과 상관이 적다.
+            if _text(it, "examTypCcd") != "실기":
                 continue
+            # 제0회는 일정에서도 빼고 있다(정기 회차와 기간이 겹친다).
+            # 여기서만 남기면 화면에서 짝이 맞는 회차를 못 찾는다.
             try:
-                applied = int(_text(it, "susiCnt", "applCnt", "rcptCnt") or 0)
-                passed = int(_text(it, "passCnt", "passNum") or 0)
+                seq = int(_text(it, "implSeq") or 0)
+                applied = int(_text(it, "recptNoCnt") or 0)
+                passed = int(_text(it, "examPassCnt") or 0)
             except ValueError:
                 continue
-            if applied <= 0:
+            if seq < 1 or applied <= 0:
                 continue
             out.append({
                 "year": year,
-                "round": int(_text(it, "implSeq", "seq") or 0),
+                "round": seq,
                 "applied": applied,
                 "passed": passed,
-                "rate": round(passed * 100 / applied, 1),
+                # passRate는 "59.4%" 같은 문자열로 온다. 우리가 다시
+                # 계산하지 않고 그대로 쓴다 — 반올림 방식이 달라지면
+                # 공단 발표와 숫자가 어긋난다.
+                "rate": _parse_rate(_text(it, "passRate"), passed, applied),
             })
 
-        # 전 종목 수백 건을 받아놓고 조주기능사를 한 건도 못 골랐다면
-        # 필드명 추측이 틀린 것이다. 그냥 넘어가면 "합격률이 원래 없다"로
-        # 오해하게 되므로 로그에 남긴다.
-        if len(out) == before:
-            print(f"  합격률 {year}년: {len(items)}건 받았으나 조주기능사 0건 "
-                  f"— 필드명 확인 필요")
+        got = len(out) - before
+        if got == 0:
+            print(f"  합격률 {year}년: {len(items)}건 중 조주기능사 실기 0건")
+        else:
+            print(f"  합격률 {year}년: {got}회차")
 
     out.sort(key=lambda r: (r["year"], r["round"]))
     return out
+
+
+def _fetch_all_pages(key: str, year: int) -> list:
+    """그 해 전 종목을 **한 번에** 받는다.
+
+    종목을 요청으로 좁힐 수 없어(jmCd를 넣어도 무시된다) 그 등급 전체를
+    받아 걸러야 한다. 다행히 이 API는 한 페이지 크기에 제한이 없다 —
+    일정 API가 50을 넘기면 거절하길래 같은 줄 알고 50씩 31번 넘기고
+    있었는데, 여기서는 한 번이면 된다. 하루 쿼터가 1,000회라 요청 수를
+    아끼는 편이 낫다.
+    """
+    url = (
+        f"{PASS_RATE_URL}?serviceKey={key}&baseYY={year}"
+        f"&grdCd={GRD_CD}&numOfRows={PASS_RATE_PAGE_SIZE}&pageNo=1"
+    )
+    root = ET.fromstring(get(url).decode("utf-8"))
+    items = root.findall(".//item")
+
+    # 한 번에 다 못 받았으면 조용히 넘어가지 않는다 — 뒤쪽에 조주기능사가
+    # 있으면 "합격률이 없는 해"처럼 보인다.
+    el = root.find(".//totalCount")
+    total = int(el.text) if el is not None and el.text else 0
+    if total and len(items) < total:
+        print(f"  합격률 {year}년: {len(items)}/{total}건만 받음 — "
+              f"PASS_RATE_PAGE_SIZE를 늘릴 것")
+    return items
+
+
+def _parse_rate(raw: str, passed: int, applied: int) -> float:
+    """`"59.4%"` → `59.4`. 값이 이상하면 직접 계산한다."""
+    try:
+        return round(float(raw.replace("%", "").strip()), 1)
+    except ValueError:
+        return round(passed * 100 / applied, 1) if applied else 0.0
 
 
 def main() -> None:
@@ -263,7 +288,7 @@ def main() -> None:
     if not sessions:
         sys.exit("일정을 한 건도 받지 못했습니다. 기존 파일을 그대로 둡니다.")
 
-    rates = fetch_pass_rates(key, [today.year - 1, today.year])
+    rates = fetch_pass_rates(key, [today.year - 2, today.year - 1, today.year])
 
     payload = {
         "source": "data.go.kr 국가자격 시험일정 / 국가기술자격 합격률",
