@@ -1,35 +1,7 @@
 {
-  "generated_at": "2026-09-16",
+  "generated_at": "2026-09-23",
   "jm_cd": "7916",
   "pass_rates": [
-    {
-      "applied": 801,
-      "passed": 493,
-      "rate": 61.5,
-      "round": 1,
-      "year": 2024
-    },
-    {
-      "applied": 848,
-      "passed": 562,
-      "rate": 66.3,
-      "round": 2,
-      "year": 2024
-    },
-    {
-      "applied": 971,
-      "passed": 620,
-      "rate": 63.9,
-      "round": 3,
-      "year": 2024
-    },
-    {
-      "applied": 1008,
-      "passed": 596,
-      "rate": 59.1,
-      "round": 4,
-      "year": 2024
-    },
     {
       "applied": 731,
       "passed": 449,
